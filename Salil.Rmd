@@ -89,4 +89,26 @@ get_tstat(df$copd, df$assign)
 
 LOL something's wrong...
 
+# Causal Effect Identification
+
+Notation:
+
+- $Z_i$ as the treatment assigned to unit $i$ (i.e., $Z_i=1$ if the doctor for patient $i$ was encouraged to give them the flu shot and $Z_i=0$ otherwise).
+- $D_i$ as the treatment received by unit $i$ (i.e., $D_i=1$ if patient $i$ was given the flu shot by their doctor, and $D_i=0$ otherwise.)
+- $Y_i$ as the outcome for unit $i$ (i.e., $Y_i=1$ if patient $i$ was hospitalized and $Y_i=0$ otherwise.)
+
+We have a non-compliance problem in this setup: it can be the case that a patient is assigned treatment but doesn't receive it, or that a patient isn't assigned treatment but still receives it.
+
+Obviously, we don't observe the full set of compliance behaviors because we only observe one set of potential outcomes.
+
+The two general solutions for this kind of problem are:
+
+- identify the causal effect of the treatment assigned ($Z$) on $Y$ to obtain $\tau_Y = E(Y \mid Z=1) - E(Y \mid Z=0)$ (the 'intent to treat effect')
+- use $Z$ as an instrumental variable and try to infer the effect of $D$ on $Y$ ('imperfect randomization').
+
+```{r}
+Z <- df$assign
+D <- df$receive
+Y <- df$outcome
+```
 
