@@ -1,0 +1,60 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(AER)
+fludata <- read.csv("fludata.txt", sep="")
+
+#Covariate 1: age (age of patient)
+d1_age <- fludata$age[fludata$receive == 1]
+d0_age <- fludata$age[fludata$receive == 0]
+age_p <- t.test(d1_age, d0_age)$p.value
+
+#Covariate 2: copd (indicator chronic obstructive pulmonary disease)
+d1_copd <- fludata$copd[fludata$receive == 1]
+d0_copd<- fludata$copd[fludata$receive == 0]
+copd_p <- t.test(d1_copd, d0_copd)$p.value
+
+#Covariate 3: dm (indicator of diabetes)
+d1_dm <- fludata$dm[fludata$receive == 1]
+d0_dm <- fludata$dm[fludata$receive == 0]
+dm_p <- t.test(d1_dm, d0_dm)$p.value
+
+#Covariate 4: heartd (indicator of heart disease)
+d1_heartd <- fludata$heartd[fludata$receive == 1]
+d0_heartd <- fludata$heartd[fludata$receive == 0]
+heartd_p <- t.test(d1_heartd, d0_heartd)$p.value
+
+#Covariate 5: renal (indicator of renal disease)
+d1_renal <- fludata$renal[fludata$receive == 1]
+d0_renal <- fludata$renal[fludata$receive == 0]
+renal_p <- t.test(d1_renal, d0_renal)$p.value
+
+#Covariate 6: liverd (indicator of liver disease)
+d1_liverd <- fludata$liverd[fludata$receive == 1]
+d0_liverd <- fludata$liverd[fludata$receive == 0]
+liverd_p <- t.test(d1_liverd, d0_liverd)$p.value
+
+#Covariate 7: race (race of patient #unsure what 1 indicates.. white?)
+d1_race <- fludata$race[fludata$receive == 1]
+d0_race <- fludata$race[fludata$receive == 0]
+race_p <- t.test(d1_race, d0_race)$p.value
+
+#Covariate 8: sex (gender of patient #unsure what 1 indicates)
+
+```
+
+```{r}
+# without covariates
+ivsum1 <- summary(ivreg(outcome ~ receive | assign , data=fludata))
+# with age and copd (as did Hirano)
+ivsum2 <- summary(ivreg(outcome ~ receive + age + copd | assign + age + copd, data=fludata))
+# with age, copd, and sex
+ivsum3 <- summary(ivreg(outcome ~ receive + age + copd + sex | assign + age + copd + sex,
+data=fludata))
+
+```
+
+

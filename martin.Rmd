@@ -1,0 +1,128 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+#load packages
+library(DOS2)
+library(optmatch)
+library(RItools)
+library(ggplot2)
+library(dplyr)
+source('utility.R')
+library(knitr)
+fludata <- read.csv("fludata.txt", sep="")
+```
+
+## Check covariate balance
+
+```{r}
+#check covariate balance for everyone
+plot(xBalance(receive ~ assign + age + copd + dm + heartd + race + renal + sex + liverd - 1, data=fludata)) #for everyone. we see huge imbalance in assigned, which indicates encouragement worked 
+
+#restrict to those who did not receive encouragement 
+no_encouragement = subset(fludata, assign == 0)
+
+mean(no_encouragement$receive) #share of treated units among those not encouraged 
+count(no_encouragement, receive) #number of treated and untreated units among those not encouraged
+
+#check covariate balance for those who did not receive encouragement 
+plot(xBalance(receive ~ age + copd + dm + heartd + race + renal + sex + liverd - 1, data=no_encouragement)) #for everyone. we see huge imbalance in assigned, which indicates encouragement worked 
+
+```
+
+## TO-DO: Other checks of how covariates are distributed for treated and untreated
+
+##define some functions
+
+```{r}
+plot_discrete = function(data, treat, var_of_interest) {
+  treat = sym(treat)
+  var_of_interest = sym(var_of_interest)
+  
+  freqs = data %>% 
+    mutate(!!var_of_interest := as.factor(!!var_of_interest)) %>% 
+    group_by(!!treat, !!var_of_interest) %>%
+    summarize(n = n()) %>%
+    mutate(pct = n/sum(n))
+  
+  ggplot(freqs, aes(x = !!var_of_interest, y = pct, fill = !!treat)) +
+     geom_bar(stat = "identity", position = "dodge")  +
+      ggtitle(paste0("Relative Frequency of ", var_of_interest, " by treatment status")) +
+      labs(fill = "Treatment Status")
+}
+
+plot_rel_freq <- function(var, treat, data) {
+  
+  var = sym(var)
+  treat = sym(treat)
+  
+  ggplot(data, aes(x = !!var, fill = !!treat)) +
+    geom_density(alpha = 0.5) +
+    ggtitle(paste0("Density of ", var, " by treatment status")) +
+    labs(fill = "Treatment Status")
+}
+
+```
+
+## Compute prop scores and covariate distances and match 
+
+```{r}
+#Compute propensity score 
+no_encouragement$prop <- glm(receive ~ age + copd + dm + heartd + race + renal + sex + liverd, family=binomial, data=no_encouragement)$fitted.values
+plot_rel_freq('prop', 'receive', no_encouragement)
+
+#Compute covariate distances
+no_encouragement = no_encouragement %>% mutate(z = receive) ##otherwise the summary function does not work. fix this later, cos Z it's usually reserved for the instrument, not for the instrumented variable.
+dist1 <- match_on(z ~ age + copd + dm + heartd + race + renal + sex + liverd, method = "mahalanobis", data=no_encouragement)
+match1 <- pairmatch(dist1, data=no_encouragement)
+match1_summary = summarize.match(no_encouragement, match1)
+
+plot(xBalance(receive ~ age + copd + dm + heartd + race + renal + sex + liverd -1, strata=list(unstrat=NULL, match1=~match1), data=no_encouragement)) #BEFORE AND AFTER
+title('Covariate Balance Before and After Matching')
+
+```
+
+```{r}
+# #B2.i
+# #Function to compute mean and max absolute difference in propensity scores.
+# mean_and_max = function(original, data) {
+#   
+#   sum = summarize.match(original, data)
+#   
+#   dist_sum = sum %>% 
+#     summarise(prop_dist = abs(prop.1 - prop.0))
+# 
+#     mean_dist = mean(dist_sum$prop_dist)
+#   max_dist = max(dist_sum$prop_dist)
+#   
+#   return(list(mean = mean_dist, max = max_dist, all=sum))
+# }
+# 
+# match1_mean_max = mean_and_max(no_encouragement, match1) 
+# match1_dist_mean = round(match1_mean_max[["mean"]],4)
+# match1_dist_max = round(match1_mean_max[["max"]],4)
+```
+
+##Match using caliper 
+```{r}
+dist1_caliper <- addcaliper(dist1, z=no_encouragement$receive, p=no_encouragement$prop, caliper=0.1)
+match1_caliper = pairmatch(dist1_caliper, data=no_encouragement)
+match1_caliper_summary = summarize.match(no_encouragement, match1_caliper)
+```
+
+#Estimate ATT
+
+```{r}
+att = match1_summary %>% mutate(t_i = outcome.1 - outcome.0)  %>% summarize(att = mean(t_i)) %>% pull(att)
+att_caliper = match1_caliper_summary %>% mutate(t_i = outcome.1 - outcome.0)  %>% summarize(att = mean(t_i)) %>% pull(att)
+```
+
+#Now do regression 
+```{r}
+#Estimate the effect via OLS
+ols_results = summary(lm(outcome ~ receive, data=no_encouragement))[["coefficients"]]
+#Now with controls
+ols_results_controls = summary(lm(outcome ~ receive + age + copd + dm + heartd + race + renal + sex + liverd, data=no_encouragement))[["coefficients"]]
+```
