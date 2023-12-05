@@ -71,55 +71,179 @@ plot_rel_freq <- function(var, treat, data) {
 ```{r}
 #Compute propensity score 
 no_encouragement$prop <- glm(receive ~ age + copd + dm + heartd + race + renal + sex + liverd, family=binomial, data=no_encouragement)$fitted.values
-plot_rel_freq('prop', 'receive', no_encouragement)
+
+#Plot propensity score by treatment status
+ggplot(no_encouragement, aes(x = prop, fill = as.factor(receive))) +
+  geom_density(alpha = 0.5) +
+  ggtitle(paste0("Density of propensity score by treatment status")) +
+  labs(fill = "Treatment Status")
 
 #Compute covariate distances
 no_encouragement = no_encouragement %>% mutate(z = receive) ##otherwise the summary function does not work. fix this later, cos Z it's usually reserved for the instrument, not for the instrumented variable.
+no_encouragement = no_encouragement %>% mutate(id = row_number())
 dist1 <- match_on(z ~ age + copd + dm + heartd + race + renal + sex + liverd, method = "mahalanobis", data=no_encouragement)
 match1 <- pairmatch(dist1, data=no_encouragement)
 match1_summary = summarize.match(no_encouragement, match1)
+match1_k_3 = pairmatch(dist1, controls = 3, data=no_encouragement)
+match1_k_3_summary = summarize.match(no_encouragement, match1_k_3)
 
 plot(xBalance(receive ~ age + copd + dm + heartd + race + renal + sex + liverd -1, strata=list(unstrat=NULL, match1=~match1), data=no_encouragement)) #BEFORE AND AFTER
 title('Covariate Balance Before and After Matching')
 
+plot(xBalance(receive ~ age + copd + dm + heartd + race + renal + sex + liverd -1, strata=list(unstrat=NULL, match1=~match1_k_3), data=no_encouragement)) #BEFORE AND AFTER
+title('Covariate Balance Before and After Matching with k = 3')
+
 ```
 
 ```{r}
-# #B2.i
-# #Function to compute mean and max absolute difference in propensity scores.
-# mean_and_max = function(original, data) {
-#   
-#   sum = summarize.match(original, data)
-#   
-#   dist_sum = sum %>% 
-#     summarise(prop_dist = abs(prop.1 - prop.0))
-# 
-#     mean_dist = mean(dist_sum$prop_dist)
-#   max_dist = max(dist_sum$prop_dist)
-#   
-#   return(list(mean = mean_dist, max = max_dist, all=sum))
-# }
-# 
-# match1_mean_max = mean_and_max(no_encouragement, match1) 
-# match1_dist_mean = round(match1_mean_max[["mean"]],4)
-# match1_dist_max = round(match1_mean_max[["max"]],4)
+#B2.i
+#Function to compute mean and max absolute difference in propensity scores.
+mean_and_max = function(original, data) {
+
+  sum = summarize.match(original, data)
+
+  dist_sum = sum %>%
+    summarise(prop_dist = abs(prop.1 - prop.0))
+
+    mean_dist = mean(dist_sum$prop_dist)
+  max_dist = max(dist_sum$prop_dist)
+
+  return(list(mean = mean_dist, max = max_dist, all=sum))
+}
+
+match1_mean_max = mean_and_max(no_encouragement, match1)
+match1_dist_mean = round(match1_mean_max[["mean"]],4)
+match1_dist_max = round(match1_mean_max[["max"]],4)
+
+match1_diffs = match1_mean_max[["all"]] %>% select(id.0, id.1, prop.1, prop.0) %>% mutate(diff = prop.1 - prop.0)
 ```
 
 ##Match using caliper 
 ```{r}
 dist1_caliper <- addcaliper(dist1, z=no_encouragement$receive, p=no_encouragement$prop, caliper=0.1)
 match1_caliper = pairmatch(dist1_caliper, data=no_encouragement)
+
 match1_caliper_summary = summarize.match(no_encouragement, match1_caliper)
+match1_caliper_mean_max = mean_and_max(no_encouragement, match1_caliper)
+match1_caliper_dist_mean = round(match1_caliper_mean_max[["mean"]],4)
+match1_caliper_dist_max = round(match1_caliper_mean_max[["max"]],4)
+
+match1_caliper_diffs = match1_caliper_mean_max[["all"]] %>% select(id.0, id.1, prop.1, prop.0) %>% mutate(diff = prop.1 - prop.0)
 ```
 
-#Estimate ATT
+#Estimate ATT for 1:1, caliper, and 1:3 
 
 ```{r}
 att = match1_summary %>% mutate(t_i = outcome.1 - outcome.0)  %>% summarize(att = mean(t_i)) %>% pull(att)
 att_caliper = match1_caliper_summary %>% mutate(t_i = outcome.1 - outcome.0)  %>% summarize(att = mean(t_i)) %>% pull(att)
+att_k_3 = match1_k_3_summary %>% mutate(t_i = outcome.1 - outcome.0)  %>% summarize(att = mean(t_i)) %>% pull(att)
+
 ```
 
-#Now do regression 
+#Compute bias-corrected ATT
+```{r}
+#Compute bias-corrected estimate of the average treatment effect on the treated.
+#Step 1: Fit a linear regression used to compute mu_0 for those in the control group and mu_1 for the treatment units
+reg_only_control = lm(outcome ~ receive + age + copd + dm + heartd + race + renal + sex + liverd,
+         data = no_encouragement %>% filter(receive==0)) #check: aren't we constraining to a single value for receive? so it does not make sense to incldue it in the regression
+
+reg_only_treat = lm(outcome ~ receive + age + copd + dm + heartd + race + renal + sex + liverd,
+         data = no_encouragement %>% filter(receive==1)) #check: aren't we constraining to a single value for receive? so it does not make sense to incldue it in the regression
+
+#Step 2: Compute fitted value for those in the control group using the parameters estimated in the linear regression
+control_sample = no_encouragement %>% filter(receive==0)
+treat_sample = no_encouragement %>% filter(receive==1)
+
+control_sample$pred_y = predict(reg_only_control, newdata = control_sample)
+treat_sample$pred_y = predict(reg_only_treat, newdata = treat_sample) 
+
+control_sample = control_sample %>% select(id, pred_y)
+treat_sample = treat_sample %>% select(id, pred_y)
+pred_y = bind_rows(control_sample, treat_sample)
+no_encouragement = no_encouragement %>% left_join(pred_y, by = "id") 
+
+#Step 3: Compute mu_0 for those in the treatment group based on the parameters estimated in the linear regression
+change_d = no_encouragement %>% filter(receive == 1) %>% select(-receive) %>% mutate(receive = 0) 
+change_d$mu_0_treat = predict(reg_only_control, newdata = change_d)
+change_d = change_d %>% select(id, mu_0_treat)
+mu_0_for_controls = control_sample %>% rename(mu_0_controls = pred_y)
+
+#Step 4: Attach mu_0 to matches dataset
+match1_summary_full = match1_summary %>% 
+  left_join(change_d, by = c("id.1" = "id")) %>% 
+  left_join(mu_0_for_controls, by = c("id.0" = "id"))
+
+#Step 5: Compute the bias-corrected estimate of the average treatment effect on the treated
+##Note: our sample is 1:1, so M = 1 and we automatically sum Y over all matches for each i in the current code
+##Note 2: pred_y.0 is mu_0 for those in the control group, and predicted_mu_0 is mu_0 for those in the treatment group
+match1_summary_full = match1_summary_full %>% mutate(b_i = mu_0_treat - mu_0_controls) 
+
+#Step 6: compute mean bias
+hat_b = mean(match1_summary_full$b_i)
+  
+#Step 7: compute unadjusted ATT and apply adjustment
+unadjusted_att = mean(match1_summary_full$outcome.1 - match1_summary_full$outcome.0)
+adjusted_att = unadjusted_att - hat_b
+
+#Step 8: compute variance of the bias-corrected estimate of the average treatment effect on the treated
+##Step 8.1: compute the number of items each control unit has been used as a match for a treated unit
+k = match1_summary_full %>% 
+  group_by(id.0) %>% 
+  summarize(k = n()) %>% 
+  ungroup() %>% 
+  rename(id = id.0)
+
+#Step 8.2: now compute variance
+aux_var = no_encouragement %>% 
+  left_join(k, by = "id") %>%
+  mutate(k = ifelse(is.na(k), 0, k)) %>%
+  mutate(m = 1) %>% #because we're using a 1:1 sample
+  mutate(term = receive * (outcome - pred_y)^2 + (1 - receive) * (k/m)^2 * (outcome - pred_y)^2) 
+  
+var_adjusted_att = (sum(aux_var$term) / sum(aux_var$receive == 1)^2)
+
+#Step 9: compute standard error
+se_adjusted_att = sqrt(var_adjusted_att)
+
+#Step 10: compute 95% confidence interval
+ci_lower = adjusted_att - 1.96 * se_adjusted_att
+ci_upper = adjusted_att + 1.96 * se_adjusted_att
+ci = c(ci_lower, ci_upper)
+
+```
+
+#Do 1:k matching
+
+```{r}
+
+
+plot(xBalance(z ~  faminc + incmiss + black + hisp + afqtpct + edm + edmissm + female  -1,strata=list(unstrat=NULL,match1_caliper_k_5=~match1_caliper_k_5), data=dynarski))
+
+plot(xBalance(z ~  faminc + incmiss + black + hisp + afqtpct + edm + edmissm + female  -1,strata=list(match1_caliper=~match1_caliper,match1_caliper_k_5=~match1_caliper_k_5), data=dynarski)) 
+
+match1_k_5 = mean_and_max(match1_caliper_k_5) 
+match1_k_5_mean = match1_k_5[["mean"]]
+match1_k_5_max = match1_k_5[["max"]]
+test = match1_k_5[["all"]]
+
+
+
+```
+
+So far we have estimated **on the control group only** (i.e., does that did not receive the encouragement) the following:
+
+(0) pre-post graphs; propensity score by group 
+(i) ATT via matching WITHOUT caliper, without and with bias adjustment. Variance and CI for the bias-adjusted estimate.
+(ii) ATT via matching WITH caliper, without bias adjustment 
+(iii) ATT via OLS, with and without controls. 
+
+#TO-DO: compute matches with penalty to get exact balance on COPD and maybe age. 
+#TO-DO: compute bias corrected version of ATT for 1:3
+#TO-DO: Check why caliper version of ATT is exactly the same as the one without caliper
+
+
+
+#2. Just Do OLS 
 ```{r}
 #Estimate the effect via OLS
 ols_results = summary(lm(outcome ~ receive, data=no_encouragement))[["coefficients"]]
