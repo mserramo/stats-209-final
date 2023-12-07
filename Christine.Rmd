@@ -7,9 +7,7 @@ Di (treatment of interest) = indicator of patient i receiving flu shot(vaccine)
 Yi (outcome) = indicator for flu-related hospital visits
 Zi  (encouragement/assignment)= indicator of patient i's physician receiving a reminder letter indicating that the patient was eligible to receive the influenza vaccine under U.S. Public Health Service Criteria
 
-Covariate 1 = age
-Covariate 2 = copd
-
+## Covariates
 ```{r fludata}
 
 fludata <- read.csv("~/Desktop/Fall 2023/STATS209/data/fludata.txt", sep="")
@@ -97,6 +95,7 @@ title("COPD Rates by Flu Shot Status")
 ```
 
 \pagebreak
+# IVREG
 ```{r}
 # Z = assign
 # D = receive
@@ -128,19 +127,45 @@ print(ivsum2$coefficients["receive", ])
 cat("With covariates age, COPD, and sex", "\n")
 print(ivsum3$coefficients["receive", ])
 ```
+## E-Value
+```{r evalue, include=TRUE}
+#e-value for encouragement and flu-related hospitalization relationship
+Z0_Y0 <- sum(fludata$assign == 0 & fludata$outcome == 0) 
+Z0_Y1 <- sum(fludata$assign == 0 & fludata$outcome == 1)
+Z1_Y0 <- sum(fludata$assign == 1 & fludata$outcome == 0) 
+Z1_Y1 <- sum(fludata$assign == 1 & fludata$outcome == 1)
 
-```{r evalue, eval=FALSE, include=FALSE}
-evalue = function(rr) 
-  + {
-+ rr + sqrt(rr*(rr - 1)) 
-    +}
+ZY_table <- table(fludata$assign, fludata$outcome)
 
-p1 = 397/(397+78557)
-p0 = 51/(51+108778) >rr =p1/p0
+rownames(ZY_table) <- c("No Encouragement", "Encouragement")
+colnames(ZY_table) <- c("No Flu Visit", "Flu Visit")
+
+evalue <- function(rr) {
+  rr + sqrt(rr*(rr - 1)) 
+}
+
+p1 = Z1_Y1/(Z1_Y1+Z1_Y0)
+p0 = Z0_Y1/(Z0_Y1+Z0_Y0) 
+rr =p1/p0
 logrr = log(p1/p0)
-se = sqrt(1/397+1/51-1/(397+78557)-1/(51+108778))
+se = sqrt(1/Z1_Y1+1/Z0_Y1-1/(Z1_Y1+Z1_Y0 )-1/(Z0_Y1+Z0_Y0))
 upper = exp(logrr+1.96*se)
 lower = exp(logrr -1.96*se)
+evalue(rr)
+
+#risk ratio is less than 1, so cannot calculate e-value
 
 ```
 
+```{r evalue results, echo=FALSE}
+print(ZY_table)
+cat("\n")
+
+cat("Risk Ratio: ", rr, "\n")
+cat("95% Confidence Interval of Risk Ratio: [", round(lower, 4), ", ", round(upper, 4), "]\n")
+cat("E-Value based on Point estimate(rr): ", evalue(rr), "\n")
+cat("E-Value based on lower CI: ", evalue(lower), "\n")
+
+
+
+```
