@@ -33,24 +33,44 @@ make_hists <- function(var, z, varname) {
   ggplot() + 
     geom_histogram(aes(x=var_treat, y=..density.., col='b', fill='b'), alpha=0.3, binwidth=binwidth) + 
     geom_histogram(aes(x=var_control, y=..density.., col='g', fill='g'), alpha=0.3, binwidth=binwidth) +
-    scale_colour_manual(name="group", values=c("g" = "green", "b"="blue"), labels=c("g"="control", "b"="treatment")) +
-    scale_fill_manual(name="group", values=c("g" = "green", "b"="blue"), labels=c("g"="control", "b"="treatment")) + 
+    scale_colour_manual(name="group", values=c("g" = "green", "b"="blue"), labels=c("g"="not hospitalized", "b"="hospitalized")) +
+    scale_fill_manual(name="group", values=c("g" = "green", "b"="blue"), labels=c("g"="not hospitalized", "b"="hospitalized")) + 
     labs(x=varname)
 }
 ```
 
 ```{r}
-make_hists(df$age, df$assign, "age")
-make_hists(df$receive, df$assign, "treatment received")
-make_hists(df$outcome, df$assign, "hospitalization (outcome)")
-make_hists(df$copd, df$assign, "COPD")
-make_hists(df$dm, df$assign, "diabetes mellitus")
-make_hists(df$heartd, df$assign, "heart disease")
-make_hists(df$race, df$assign, "race")
-make_hists(df$renal, df$assign, "renal disease")
-make_hists(df$sex, df$assign, "sex")
-make_hists(df$liverd, df$assign, "liver disease")
+a <- make_hists(df$age, df$outcome, "age")
+# make_hists(df$receive, df$outcome, "treatment received")
+#  make_hists(df$outcome, df$outcome, "hospitalization (outcome)")
+b <- make_hists(df$copd, df$outcome, "COPD")
+c <- make_hists(df$dm, df$outcome, "diabetes mellitus")
+d <- make_hists(df$heartd, df$assign, "heart disease")
+e <- make_hists(df$race, df$assign, "race")
+f <- make_hists(df$renal, df$assign, "renal disease")
+g <- make_hists(df$sex, df$assign, "sex")
+h <- make_hists(df$liverd, df$assign, "liver disease")
 ```
+
+```{r}
+library(ggpubr) # for ggarrange
+```
+
+```{r}
+i <- ggarrange(a, b, c, d, e, f, g, h, common.legend = TRUE)
+ggsave('outcome_hists.png', i)
+```
+
+
+
+```{r}
+
+p <- ggplot() + 
+  geom_violin(aes(x=factor(df$receive), y=df$copd)) +
+  labs(x='receipt of vaccine')
+p
+```
+
 
 ## significance testing (ignore for now, just use t-test)
 
@@ -87,7 +107,7 @@ get_tstat <- function(var, z) {
 get_tstat(df$copd, df$assign)
 ```
 
-LOL something's wrong...
+LOL something's wrong... ignore this section for now.
 
 # Causal Effect Identification
 
@@ -97,18 +117,151 @@ Notation:
 - $D_i$ as the treatment received by unit $i$ (i.e., $D_i=1$ if patient $i$ was given the flu shot by their doctor, and $D_i=0$ otherwise.)
 - $Y_i$ as the outcome for unit $i$ (i.e., $Y_i=1$ if patient $i$ was hospitalized and $Y_i=0$ otherwise.)
 
+The randomization/exogeneity assumption here is that $Z$ is independent of $\{D(1), D(0), Y(1, 1), Y(1, 0), Y(0, 1), Y(0, 0)\}$.
+
 We have a non-compliance problem in this setup: it can be the case that a patient is assigned treatment but doesn't receive it, or that a patient isn't assigned treatment but still receives it.
 
 Obviously, we don't observe the full set of compliance behaviors because we only observe one set of potential outcomes.
 
-The two general solutions for this kind of problem are:
+The general solution to this kind of problem is to use an instrumental variables approach, if some instrument is available. 
 
-- identify the causal effect of the treatment assigned ($Z$) on $Y$ to obtain $\tau_Y = E(Y \mid Z=1) - E(Y \mid Z=0)$ (the 'intent to treat effect')
-- use $Z$ as an instrumental variable and try to infer the effect of $D$ on $Y$ ('imperfect randomization').
+However, these solutions only work under exclusion restriction and monotonicity. Exclusion restriction here might be violated, as suggested in Hirano et al. (2000). They indicate that exclusion restriction might be violated for a particular subgroup like always takers that are older and have COPD, because their doctor, upon receiving the encouragement, might also tell them to take other preventative measures.
+
+We perform a sensitivity analysis here where we include different kinds and numbers of covariates (which are sex, race, age, and multiple pre-existing disease conditions) and see how much the estimator changes.
 
 ```{r}
+Y <- df$outcome
 Z <- df$assign
 D <- df$receive
-Y <- df$outcome
+
+ttest <- function(var) {
+  t.test(var[Y==1], var[Y==0])
+}
+
+ttest(df$copd)
+ttest(df$age)
+ttest(df$dm)
+ttest(df$heartd)
+ttest(df$renal)
+ttest(df$liverd)
 ```
+
+Performing the IV analyses: 
+
+```{r}
+library(AER)
+```
+
+```{r}
+summary(ivreg(outcome ~ receive | assign, data=df))$coefficients['receive',]
+summary(ivreg(outcome ~ receive + copd | assign + copd, data=df))$coefficients['receive',]
+summary(ivreg(outcome ~ receive + age | assign + age, data=df))$coefficients['receive',]
+summary(ivreg(outcome ~ receive + sex | assign + sex, data=df))$coefficients['receive',]
+summary(ivreg(outcome ~ receive + copd+age | assign + copd+age, data=df))$coefficients['receive',]
+summary(ivreg(outcome ~ receive + copd+age+sex | assign + copd+age+sex, data=df))$coefficients['receive',]
+summary(ivreg(outcome ~ receive + copd+age+sex+dm+heartd+renal | assign + copd+age+sex+dm+heartd+renal, data=df))$coefficients['receive',]
+summary(ivreg(outcome ~ receive + age+sex+dm+heartd+renal | assign + age+sex+dm+heartd+renal, data=df))$coefficients['receive',]
+summary(ivreg(outcome ~ receive + sex+dm+heartd+renal | assign + sex+dm+heartd+renal, data=df))$coefficients['receive',]
+```
+
+Now, we'll take out the people that had COPD and see what we get.
+
+```{r}
+dfnocopd <- df[df$copd==0,]
+```
+
+```{r}
+summary(ivreg(outcome ~ receive + age+sex+dm+heartd+renal | assign + age+sex+dm+heartd+renal, data=dfnocopd))$coefficients['receive',]
+```
+
+
+
+# Reframing as observational study
+
+So if we can't go the IV route, then we can re-frame this as an observation study, with $Z_i$ (the old $D_i$) denoting whether or not the vaccine was received, and the encouragement (the old $Z_i$) becoming another covariate.
+
+# Sensitivity analysis
+
+We want to check if unconfoundedness holds. We do this via the E-value.
+
+$RR_{ZY \mid X}^{\text{obs}} = \frac{P(Y=1 \mid Z=1)}{P(Y=1 \mid Z=0)}$, ignoring covariates.
+
+An estimate of this risk ratio is: (from VandeWeele and Ding, 2017)
+
+```{r}
+get_e <- function(RR) {
+  RR + sqrt(RR * (RR-1))
+}
+```
+
+
+```{r}
+Z <- df$receive
+Y <- df$outcome
+# A <- df$copd
+A <- df$assign
+B <- df$dm
+C <- df$heartd
+
+num <- sum(Y[Z==1]) / length(Y[Z==1])
+denom <- sum(Y[Z==0]) / length(Y[Z==0])
+RR <- 1/(num/denom) # because num/denom < 1
+
+# CONDITIONAL ON COPD==1
+num <- sum(Y[Z==1 & A==1]) / length(Y[Z==1 & A==1])
+denom <- sum(Y[Z==0 & A==1]) / length(Y[Z==0 & A==1])
+RR_X1 <- get_e(denom/num) # 1.45
+
+# CONDITIONAL ON COPD==0
+num <- sum(Y[Z==1 & A==0]) / length(Y[Z==1 & A==0])
+denom <- sum(Y[Z==0 & A==0]) / length(Y[Z==0 & A==0])
+num
+denom
+RR_X0 <- get_e(num/denom) # 1.13
+```
+
+```{r}
+# conditional on COPD==1, DM==1, HEART==1
+num <- sum(Y[Z==1 & A==1 & B==1 & C==1]) / length(Y[Z==1 & A==1 & B==1 & C==1])
+denom <- sum(Y[Z==0 & A==1 & B==1 & C==1]) / length(Y[Z==0 & A==1 & B==1 & C==1])
+get_e(denom/num) # 2.55
+
+num <- sum(Y[Z==1 & A==0 & B==1 & C==1]) / length(Y[Z==1 & A==0 & B==1 & C==1])
+denom <- sum(Y[Z==0 & A==0 & B==1 & C==1]) / length(Y[Z==0 & A==0 & B==1 & C==1])
+get_e(num/denom)
+```
+
+We will use the risk ratio obtained by conditioning on the covariates.
+
+The observed risk ratio of [FILL IN] could be explained away by an unmeasured confounder that was associated with both the treatment and the outcome by a risk ratio of $1.45$-fold each, above and beyond the measured confounders. However, weaker confounding would not do so. 
+
+To be clear, this means that the unmeasured confounder would have to be associated with both the vaccine receipt and hospitalization by a risk ratio of 1.45-fold each, through pathways independent of all of our covariates (or just COPD?)
+
+So, we would not need very strong confounding associations to explain away the observed treatment-outcome association. 
+
+With this smaller E-value, the evidence for causation is weaker. 
+
+```{r}
+library(EValue)
+```
+
+```{r}
+bias_plot(RR, xmax=20)
+bias_plot(RR_X1, xmax=20)
+bias_plot(RR_X0, xmax=20)
+```
+
+```{r}
+getp <- function(var) {
+  sum(var==1)/length(var)
+}
+
+getp(df$copd)
+getp(df$dm)
+getp(df$heartd)
+getp(df$renal)
+getp(df$liverd)
+```
+
+
 
