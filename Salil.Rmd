@@ -264,4 +264,41 @@ getp(df$liverd)
 ```
 
 
+# E-value with Logistic Regression
+
+```{r}
+y_logit = glm(outcome ~ receive + assign + sex + race + age + copd + dm + heartd + renal + liverd,
+              data=df,
+              family=binomial)
+log_or <- summary(y_logit)$coef[2, 1:2]
+est = exp(log_or[1])
+est
+get_e(1/est)
+
+upper.ci = exp(log_or[1] + 1.96*log_or[2])
+upper.ci
+get_e(upper.ci)
+```
+
+# AIPW
+
+```{r}
+Y <- df$outcome
+D <- df$receive
+covs <- df[, -c(2, 3)]
+```
+
+```{r}
+AIPW_SL <- AIPW$new(Y, D, covs, 
+                    Q.SL.library=c("SL.mean", "SL.glm"),
+                    g.SL.library=c("SL.mean", "SL.glm"),
+                    k_split=3, verbose=FALSE)$fit()$
+  summary(g.bound=0.025)$
+  plot.p_score()$
+  plot.ip_weights()
+```
+
+```{r}
+print(AIPW_SL$result, digits=2)
+```
 
