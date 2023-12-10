@@ -132,7 +132,7 @@ dev.off()
 
 ```{r}
 #Generate baseline 1:k dataset
-match1_1_k = pairmatch(dist1_caliper, controls = 2, data=fludata)
+match1_1_k = pairmatch(dist1_caliper, controls = 3, data=fludata)
 match1_1_k_summary = summarize.match(fludata, match1_1_k)
 
 #Plot covariate balance before and after 1:k matching
@@ -217,21 +217,24 @@ ci_1_to_k_5_exact_copd = adjustment_1_to_k_5_exact_copd[["ci"]]
 ##Implement Rosenbaum's sensitivity analysis
 
 ```{r}
-#Test whether I am implementing it well on simulated data
-# testing = data.frame(outcome.1 = rbinom(100, 1, 0.2), outcome.0 = rbinom(100, 1, 0.1))
-# senmv(testing,gamma=3,trim=1)
-#Yep, working as expected. If very low treatment effect, high p-value, and viceversa.
+#As explained in the documentation, we need to do - (outcome.1 - outcome.0) to test against the alternative that the treatment decrreases hospitalizations.
 
 
-match1_to_1_sens = match1_summary %>% select(outcome.1, outcome.0)
-senmv(match1_to_1_sens,gamma=3,trim=1)
+match1_to_1_sens_data = match1_summary %>% mutate(y = -(outcome.1 - outcome.0)) %>% pull(y)
+match1_to_1_sens = senmv(match1_to_1_sens_data,gamma=3,trim=1)
+match1_to_1_sense_pv = match1_to_1_sens[["pval"]]
 
+match1_to_1_calip_sens_data = match1_caliper_summary %>% mutate(y = -(outcome.1 - outcome.0)) %>% pull(y)
+match1_to_1_calip_sens = senmv(match1_to_1_calip_sens_data,gamma=3,trim=1)
+match1_to_1_calip_sense_pv = match1_to_1_calip_sens[["pval"]]
 
+match1_to_k_sens_data = match1_1_k_summary %>% mutate(y = -(outcome.1 - outcome.0)) %>% pull(y)
+match1_to_k_sens = senmv(match1_to_k_sens_data,gamma=3,trim=1)
+match1_to_k_sense_pv = match1_to_k_sens[["pval"]]
 
-
-data.frame(
-  col1 = c()
-)
+match1_to_k_5_exact_copd_sens_data = match1_1_k_5_exact_copd_summary %>% mutate(y = -(outcome.1 - outcome.0)) %>% pull(y)
+match1_to_k_5_exact_copd_sens = senmv(match1_to_k_5_exact_copd_sens_data,gamma=3,trim=1)
+match1_to_k_5_exact_copd_sense_pv = match1_to_k_5_exact_copd_sens[["pval"]]
 
 ```
 
