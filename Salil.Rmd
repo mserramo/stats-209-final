@@ -302,3 +302,20 @@ AIPW_SL <- AIPW$new(Y, D, covs,
 print(AIPW_SL$result, digits=2)
 ```
 
+```{r}
+pscore <- AIPW_SL$plot.p_score()
+ggsave('aipw_pscore.png')
+```
+
+```{r}
+prop_weights <- AIPW_SL$plot.ip_weights()
+ggsave('aipw_ip_weights.png')
+```
+
+### Sensitivity analysis for AIPW
+
+```{r}
+# http://carloscinelli.com/dml.sensemakr/
+library(dml.sensemakr)
+```
+
