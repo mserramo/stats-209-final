@@ -1,0 +1,315 @@
+---
+title: "jobsdata"
+output: pdf_document
+date: "2023-12-02"
+---
+Di (treatment of interest) = indicator of patient i receiving flu shot(vaccine)
+Yi (outcome) = indicator for flu-related hospital visits
+Zi  (encouragement/assignment)= indicator of patient i's physician receiving a reminder letter indicating that the patient was eligible to receive the influenza vaccine under U.S. Public Health Service Criteria
+
+## Summary of Data
+```{r}
+fludata <- read.csv("~/Desktop/Fall 2023/STATS209/data/fludata.txt", sep="")
+View(fludata)
+names(fludata)
+table(fludata$assign, fludata$receive)
+table(fludata$assign)
+```
+
+
+
+## Covariates
+```{r fludata}
+
+#Covariate 1: age (age of patient)
+d1_age <- fludata$age[fludata$receive == 1]
+d0_age <- fludata$age[fludata$receive == 0] 
+age_p <- t.test(d1_age, d0_age)$p.value
+
+#Covariate 2: copd (indicator chronic obstructive pulmonary disease)
+d1_copd <- fludata$copd[fludata$receive == 1]
+d0_copd<- fludata$copd[fludata$receive == 0] 
+copd_p <- t.test(d1_copd, d0_copd)$p.value
+
+#Covariate 3: dm (indicator of diabetes)
+d1_dm <- fludata$dm[fludata$receive == 1]
+d0_dm <- fludata$dm[fludata$receive == 0] 
+dm_p <- t.test(d1_dm, d0_dm)$p.value
+
+#Covariate 4: heartd (indicator of heart disease)
+d1_heartd <- fludata$heartd[fludata$receive == 1]
+d0_heartd <- fludata$heartd[fludata$receive == 0] 
+heartd_p <- t.test(d1_heartd, d0_heartd)$p.value
+
+#Covariate 5: renal (indicator of renal disease)
+d1_renal <- fludata$renal[fludata$receive == 1]
+d0_renal <- fludata$renal[fludata$receive == 0] 
+renal_p <- t.test(d1_renal, d0_renal)$p.value
+
+#Covariate 6: liverd (indicator of liver disease)
+d1_liverd <- fludata$liverd[fludata$receive == 1]
+d0_liverd <- fludata$liverd[fludata$receive == 0] 
+liverd_p <- t.test(d1_liverd, d0_liverd)$p.value
+
+#Covariate 7: race (race of patient #unsure what 1 indicates.. white?)
+d1_race <- fludata$race[fludata$receive == 1]
+d0_race <- fludata$race[fludata$receive == 0] 
+race_p <- t.test(d1_race, d0_race)$p.value
+
+#Covariate 8: sex (gender of patient #unsure what 1 indicates)
+d1_sex <- fludata$sex[fludata$receive == 1]
+d0_sex <- fludata$sex[fludata$receive == 0] 
+sex_p <- t.test(d1_sex, d0_sex)$p.value
+
+```
+
+
+```{r covariate p-values, echo=FALSE}
+# Xi1 = age
+cat("P-value for Age between Patients with and without Flu Shots: ", age_p, "\n")
+cat("P-value for COPD between Patients with and without Flu Shots: ", copd_p, "\n")
+cat("P-value for Diabetes between Patients with and without Flu Shots: ", dm_p, "\n")
+cat("P-value for Heart Disease between Patients with and without Flu Shots: ", heartd_p, "\n")
+cat("P-value for liverd between Patients with and without Flu Shots: ", liverd_p, "\n")
+cat("P-value for race between Patients with and without Flu Shots: ", race_p, "\n")
+cat("P-value for gender between Patients with and without Flu Shots: ", sex_p, "\n")
+```
+
+```{r covariate boxplots, echo=FALSE}
+# Xi1 = age
+boxplot(fludata$age ~ fludata$receive,
+        xlab = "Flu Shot Status",
+        ylab = "Age",
+        names = c("No Flu Shot", "Flu Shot"),
+        col = c("lightblue", "lightgreen"),
+        outline = FALSE,
+        width = c(0.5, 0.5))  
+
+legend("topright", legend = c("No Flu Shot", "Flu Shot"), fill = c("lightblue", "lightgreen"))
+title("Age for Patients with and without Flu Shots")
+
+# Load necessary libraries
+library(ggplot2)
+
+# Create density plots for age distribution by receive status
+ggplot(fludata, aes(x = age, fill = factor(receive))) +
+  geom_density(alpha = 0.5) +
+  labs(
+    title = "Age Distribution by Flu Shot Status",
+    x = "Age",
+    y = "Density",
+    fill = "Flu Shot Status"
+  ) +
+  scale_fill_manual(values = c( "lightblue",  "lightgreen")) +
+  theme_minimal()
+
+
+# Create an age pyramid
+ggplot(fludata, aes(x = age, fill = factor(receive))) +
+  geom_bar(data = subset(fludata, receive == 0), aes(y = -..count..), stat = "count", position = "identity") +
+  geom_bar(data = subset(fludata, receive == 1), aes(y = ..count..), stat = "count", position = "identity") +
+  labs(
+    title = "Age Pyramid by Flu Shot Status",
+    x = "Age",
+    y = "Count",
+    fill = "Flu Shot Status"
+  ) +
+  scale_fill_manual(values = c("lightblue", "lightgreen")) +
+  theme_minimal() +
+  coord_flip() +
+  scale_y_continuous(labels = abs)
+
+# Xi2 = COPD
+copd_table <- table(fludata$receive, fludata$copd)
+copd_proportions <- prop.table(copd_table, margin = 1)
+
+barplot(copd_proportions, beside = TRUE, col = c("lightblue", "lightgreen"),
+        names.arg = c("No Flu Shot", "Flu Shot"),
+        main = "COPD by Flu Shot Status",
+        xlab = "Flu Shot Status", ylab = "Proportion")
+legend("topright", legend = c("No COPD", "COPD"), fill = c("lightblue", "lightgreen"))
+
+
+
+```
+\pagebreak
+# IVREG (NEW)
+```{R}
+# Z = assign (letter)
+# D = receive (vaccine)
+# Y = outcome (hospitalization)
+# Xi's = age, copd, diabetes
+
+library(AER)
+
+# Group1: subgroup without COPD+under 60
+fludata2 <- fludata[fludata$copd == 0 & fludata$age < 60, ]
+
+# Group2: subgroup without COPD+60 or over
+fludata3 <- fludata[fludata$copd == 0 & fludata$age >= 60, ]
+
+# without covariates group 1
+ivsum2_1 <- summary(ivreg(outcome ~ receive | assign , data=fludata2))
+# The effect of receiving vaccines on hospitalization,using the encouragement letter as the exogenous instrument for receiving the vaccine.
+
+# with covariates diseases+sex+race group 1
+ivsum2_2 <- summary(ivreg(outcome ~ receive + dm + heartd + renal + liverd + sex + race 
+                        | assign + dm + heartd + renal + liverd + sex + race,
+                        data=fludata2))
+# without covariates group 1
+ivsum3_1 <- summary(ivreg(outcome ~ receive | assign , data=fludata3))
+
+# with covariates diseases+sex+race group 2
+ivsum3_2 <- summary(ivreg(outcome ~ receive + dm + heartd + renal + liverd + sex + race 
+                        | assign + dm + heartd + renal + liverd + sex + race,
+                        data=fludata3))
+
+
+
+fludata64 <- fludata[fludata$copd == 0 & fludata$age < 64, ]
+ivsum64 <- summary(ivreg(outcome ~ receive + dm + heartd + renal + liverd + sex + race 
+                        | assign + dm + heartd + renal + liverd + sex + race,
+                        data=fludata64))
+fludata62 <- fludata[fludata$copd == 0 & fludata$age < 62, ]
+ivsum62 <- summary(ivreg(outcome ~ receive + dm + heartd + renal + liverd + sex + race 
+                        | assign + dm + heartd + renal + liverd + sex + race,
+                        data=fludata62))
+
+fludata58 <- fludata[fludata$copd == 0 & fludata$age < 58, ]
+ivsum58 <- summary(ivreg(outcome ~ receive + dm + heartd + renal + liverd + sex + race 
+                        | assign + dm + heartd + renal + liverd + sex + race,
+                        data=fludata58))
+
+fludata56 <- fludata[fludata$copd == 0 & fludata$age < 56, ]
+ivsum56 <- summary(ivreg(outcome ~ receive + dm + heartd + renal + liverd + sex + race 
+                        | assign + dm + heartd + renal + liverd + sex + race,
+                        data=fludata56))
+
+fludata54 <- fludata[fludata$copd == 0 & fludata$age < 54, ]
+ivsum54 <- summary(ivreg(outcome ~ receive + dm + heartd + renal + liverd + sex + race 
+                        | assign + dm + heartd + renal + liverd + sex + race,
+                        data=fludata54))
+
+
+```
+
+\pagebreak
+```{r ivreg agegroup, echo=FALSE}
+cat("Age below 64", "\n")
+print(ivsum64$coefficients["receive", ])
+
+cat("Age below 62", "\n")
+print(ivsum62$coefficients["receive", ])
+
+cat("Age below 60", "\n")
+print(ivsum2_2$coefficients["receive", ])
+
+cat("Age below 58", "\n")
+print(ivsum58$coefficients["receive", ])
+
+cat("Age below 56", "\n")
+print(ivsum56$coefficients["receive", ])
+
+cat("Age below 54", "\n")
+print(ivsum54$coefficients["receive", ])
+```
+Using the indicator of encouragment to receive the flu shot as the instrument, the effect of influenza vaccine on flu-related hospitalizations:
+1. Subgroup with people under the age of 60 and non-COPD:
+```{r ivreg group1, echo=FALSE}
+cat("Without covariates ", "\n")
+print(ivsum2_1$coefficients["receive", ])
+
+cat("With covariate", "\n")
+print(ivsum2_2$coefficients["receive", ])
+
+```
+2. Subgroup with people 60 or older and non-COPD:
+```{r ivreg group2, echo=FALSE}
+cat("Without covariates ", "\n")
+print(ivsum3_1$coefficients["receive", ])
+
+cat("With covariates ", "\n")
+print(ivsum3_2$coefficients["receive", ])
+```
+
+
+
+\pagebreak
+# original IVREG (without subgroup)
+```{r, include=FALSE}
+# Z = assign (letter)
+# D = receive (vaccine)
+# Y = outcome (hospitalization)
+# Xi's = age, copd, sex
+
+library(AER)
+
+# without covariates
+ivsum3 <- summary(ivreg(outcome ~ receive | assign , data=fludata))
+# The effect of receiving vaccines on hospitalization,using the encouragement letter as the exogenous instrument for receiving the vaccine.
+
+# with age and copd (as did Hirano)
+ivsum4 <- summary(ivreg(outcome ~ receive + age + copd | assign + age + copd, data=fludata))
+
+# with age, copd, and sex
+ivsum5 <- summary(ivreg(outcome ~ receive + age + copd + sex | assign + age + copd + sex,
+                        data=fludata))
+
+```
+Using the indicator of encouragment to receive the flu shot as the instrument, the effect of influenza vaccine on flu-related hospitalizations:
+
+```{r, echo=FALSE, include=FALSE}
+cat("Without covariates ", "\n")
+print(ivsum3$coefficients["receive", ])
+
+cat("With covariates age and copd (same as Hirano)", "\n")
+print(ivsum4$coefficients["receive", ])
+
+cat("With covariates age, COPD, and sex", "\n")
+print(ivsum5$coefficients["receive", ])
+```
+
+With the encouragement letter as the exogenous instrument for receiving the vaccine, the effect of receiving vaccines on hospitalization, 
+
+In all cases, we found the estimate to be close to -11% and -12% yet not significant at the 5% level
+
+
+## E-Value
+```{r evalue, include=TRUE}
+#e-value for the effect of the letter on hospitalization
+Z0_Y0 <- sum(fludata$assign == 0 & fludata$outcome == 0) 
+Z0_Y1 <- sum(fludata$assign == 0 & fludata$outcome == 1)
+Z1_Y0 <- sum(fludata$assign == 1 & fludata$outcome == 0) 
+Z1_Y1 <- sum(fludata$assign == 1 & fludata$outcome == 1)
+
+ZY_table <- table(fludata$assign, fludata$outcome)
+
+rownames(ZY_table) <- c("No Encouragement", "Encouragement")
+colnames(ZY_table) <- c("No Flu Visit", "Flu Visit")
+
+evalue <- function(rr) {
+  rr + sqrt(rr*(rr - 1)) 
+}
+
+p1 = Z1_Y1/(Z1_Y1+Z1_Y0)
+p0 = Z0_Y1/(Z0_Y1+Z0_Y0) 
+rr =p0/p1
+logrr = log(p0/p1)
+se = sqrt(1/Z1_Y1+1/Z0_Y1-1/(Z1_Y1+Z1_Y0 )-1/(Z0_Y1+Z0_Y0))
+upper = exp(logrr+1.96*se)
+lower = exp(logrr -1.96*se)
+evalue(rr)
+
+
+```
+
+```{r evalue results, echo=FALSE}
+print(ZY_table)
+cat("\n")
+
+cat("Risk Ratio: ", rr, "\n")
+cat("95% Confidence Interval of Risk Ratio: [", round(lower, 4), ", ", round(upper, 4), "]\n")
+cat("E-Value based on Point estimate(rr): ", evalue(rr), "\n")
+cat("E-Value based on lower CI: ", evalue(lower), "\n")
+
+```
