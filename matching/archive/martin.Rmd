@@ -152,11 +152,11 @@ dev.off()
 
 #Generate new dataset forcing balance on COPD
 dist1_k_penalty <- addalmostexact(dist1_caliper, z=fludata$z, f=fludata$copd)
-match1_1_k_5_exact_copd = pairmatch(dist1_k_penalty, controls = 2, data=fludata)
-match1_1_k_5_exact_copd_summary = summarize.match(fludata, match1_1_k_5_exact_copd)
+match1_1_k_exact_copd = pairmatch(dist1_k_penalty, controls = 2, data=fludata)
+match1_1_k_exact_copd_summary = summarize.match(fludata, match1_1_k_exact_copd)
 
 png(filename="matching/balance_pre_post_1_k_copd_exact.png")
-plot(xBalance(receive ~ assign + age + copd + dm + heartd + race + renal + sex + liverd -1, strata=list(unstrat=NULL, match1_1_k_5_exact_copd=~match1_1_k_5_exact_copd), data=fludata)) #BEFORE AND AFTER
+plot(xBalance(receive ~ assign + age + copd + dm + heartd + race + renal + sex + liverd -1, strata=list(unstrat=NULL, match1_1_k_exact_copd=~match1_1_k_exact_copd), data=fludata)) #BEFORE AND AFTER
 title('Covariate Balance Before and After 1:k matching with copd exact')
 legend(
     "topright",
@@ -185,7 +185,7 @@ match1_diffs = match1_mean_max[["all"]] %>% select(id.0, id.1, prop.1, prop.0) %
 att = match1_summary %>% mutate(t_i = outcome.1 - outcome.0)  %>% summarize(att = mean(t_i)) %>% pull(att)
 att_caliper = match1_caliper_summary %>% mutate(t_i = outcome.1 - outcome.0)  %>% summarize(att = mean(t_i)) %>% pull(att)
 att_1_k = match1_1_k_summary %>% mutate(t_i = outcome.1 - outcome.0)  %>% summarize(att = mean(t_i)) %>% pull(att)
-att_1_k_5_exact_copd = match1_1_k_5_exact_copd_summary %>% mutate(t_i = outcome.1 - outcome.0)  %>% summarize(att = mean(t_i)) %>% pull(att)
+att_1_k_exact_copd = match1_1_k_exact_copd_summary %>% mutate(t_i = outcome.1 - outcome.0)  %>% summarize(att = mean(t_i)) %>% pull(att)
 ```
 
 ##Compute bias-corrected ATT
@@ -194,7 +194,7 @@ att_1_k_5_exact_copd = match1_1_k_5_exact_copd_summary %>% mutate(t_i = outcome.
 adjustment_1_to_1 = bias_adjusment(data = fludata, match_data = match1_summary)
 adjustment_1_to_1_calip = bias_adjusment(data = fludata, match_data = match1_caliper_summary)
 adjustment_1_to_k = bias_adjusment(data = fludata, match_data = match1_1_k_summary)
-adjustment_1_to_k_5_exact_copd = bias_adjusment(data = fludata, match_data = match1_1_k_5_exact_copd_summary)
+adjustment_1_to_k_exact_copd = bias_adjusment(data = fludata, match_data = match1_1_k_exact_copd_summary)
 
 #Show unadjusted and adjusted ATT for the different datasets 
 adj_att_1_to_1 = adjustment_1_to_1[["adjusted_att"]]
@@ -209,29 +209,32 @@ adj_att_1_to_k = adjustment_1_to_k[["adjusted_att"]]
 unadj_att_1_to_k = adjustment_1_to_k[["unadjusted_att"]]
 ci_1_to_k = adjustment_1_to_k[["ci"]]
 
-adj_att_1_to_k_5_exact_copd = adjustment_1_to_k_5_exact_copd[["adjusted_att"]]
-unadj_att_1_to_k_5_exact_copd = adjustment_1_to_k_5_exact_copd[["unadjusted_att"]]
-ci_1_to_k_5_exact_copd = adjustment_1_to_k_5_exact_copd[["ci"]]
+adj_att_1_to_k_exact_copd = adjustment_1_to_k_exact_copd[["adjusted_att"]]
+unadj_att_1_to_k_exact_copd = adjustment_1_to_k_exact_copd[["unadjusted_att"]]
+ci_1_to_k_exact_copd = adjustment_1_to_k_exact_copd[["ci"]]
 ```
 
 ##Implement Rosenbaum's sensitivity analysis
 
 ```{r}
-#Test whether I am implementing it well on simulated data
-# testing = data.frame(outcome.1 = rbinom(100, 1, 0.2), outcome.0 = rbinom(100, 1, 0.1))
-# senmv(testing,gamma=3,trim=1)
-#Yep, working as expected. If very low treatment effect, high p-value, and viceversa.
+#As explained in the documentation, we need to do - (outcome.1 - outcome.0) to test against the alternative that the treatment decrreases hospitalizations.
 
 
-match1_to_1_sens = match1_summary %>% select(outcome.1, outcome.0)
-senmv(match1_to_1_sens,gamma=3,trim=1)
+match1_to_1_sens_data = match1_summary %>% mutate(y = -(outcome.1 - outcome.0)) %>% pull(y)
+match1_to_1_sens = senmv(match1_to_1_sens_data,gamma=3,trim=1)
+match1_to_1_sense_pv = match1_to_1_sens[["pval"]]
 
+match1_to_1_calip_sens_data = match1_caliper_summary %>% mutate(y = -(outcome.1 - outcome.0)) %>% pull(y)
+match1_to_1_calip_sens = senmv(match1_to_1_calip_sens_data,gamma=3,trim=1)
+match1_to_1_calip_sense_pv = match1_to_1_calip_sens[["pval"]]
 
+match1_to_k_sens_data = match1_1_k_summary %>% mutate(y = -(outcome.1 - outcome.0)) %>% pull(y)
+match1_to_k_sens = senmv(match1_to_k_sens_data,gamma=3,trim=1)
+match1_to_k_sense_pv = match1_to_k_sens[["pval"]]
 
-
-data.frame(
-  col1 = c()
-)
+match1_to_k_exact_copd_sens_data = match1_1_k_exact_copd_summary %>% mutate(y = -(outcome.1 - outcome.0)) %>% pull(y)
+match1_to_k_exact_copd_sens = senmv(match1_to_k_exact_copd_sens_data,gamma=3,trim=1)
+match1_to_k_exact_copd_sense_pv = match1_to_k_exact_copd_sens[["pval"]]
 
 ```
 
