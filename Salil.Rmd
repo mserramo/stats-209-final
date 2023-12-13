@@ -319,3 +319,30 @@ ggsave('aipw_ip_weights.png')
 library(dml.sensemakr)
 ```
 
+```{r}
+Y <- df$outcome
+D <- df$receive
+covs <- df[, -c(2, 3)]
+```
+
+```{r}
+dml.401k <- dml(Y, D, as.matrix(covs), model = "npm")
+```
+
+```{r}
+summary(dml.401k)
+```
+
+```{r}
+sens.401k <- sensemakr(dml.401k, cf.y = 0.03, cf.d = 0.04)
+```
+
+```{r}
+summary(sens.401k)
+```
+
+
+
+
+
+
